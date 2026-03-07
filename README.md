@@ -13,11 +13,8 @@
 
 ## 安装部署
 1. 将插件文件放入AstrBot的`plugins`目录下
-2. 安装依赖（如未安装）：
-   ```bash
-   pip install aiohttp
-   ```
-3. 配置文件中填写必要参数（参考下方配置说明）
+
+2. 配置文件中填写必要参数（参考下方配置说明）
 
 ## 配置说明
 在AstrBot面板中修改以下配置项：
@@ -28,8 +25,8 @@ astrbot_plugin_seedream_image:
   VOLC_API_KEY: ""
   # 火山方舟API访问端点（默认北京节点）
   VOLC_ENDPOINT: "https://ark.cn-beijing.volces.com/api/v3"
-  # 生成图片尺寸（支持1920x1920/2048x2048/4096x4096等）
-  image_size: "4096x4096"
+  # 生成图片分辨率（支持1K/2K/4K等）
+  image_size: "2K"
   # Seedream模型版本
   model_version: ""
   # 发送图片时是否显示提示词（可选，默认true）
@@ -40,7 +37,7 @@ astrbot_plugin_seedream_image:
 |--------|------|------|--------|----------|
 | VOLC_API_KEY | string | 火山方舟账号API KEY | 空 | 敏感信息，请勿泄露 |
 | VOLC_ENDPOINT | string | API访问端点 | https://ark.cn-beijing.volces.com/api/v3 | 可根据地域调整域名 |
-| image_size | string | 生成图片尺寸 | 4096x4096 | 最低要求1920x1920（3686400像素） |
+| image_size | string | 生成图片分辨率 | 4K | 最低要求1K |
 | model_version | string | Seedream模型版本 | 空 | 需与账号开通的模型版本匹配 |
 | show_prompt_in_reply | boolean | 发送图片时是否显示提示词 | true | 设置为 false 则仅发送图片，不显示提示词 |
 
@@ -50,7 +47,7 @@ astrbot_plugin_seedream_image:
 1. **文生图**：`豆包 <提示词>`
 2. **图生图**：`豆包 <提示词>` + 发送图片
 3. **引用生图**：回复他人消息 + `豆包 <提示词>`（优先使用引用中的图片）
-4. **头像参考**：`@某人 + 豆包 <提示词>`（当无图片时使用 @用户 的头像作参考）
+4. **头像参考**：`豆包 <提示词> + @某人`（当无图片时使用 @用户 的头像作参考）
 
 ### 使用示例
 1. **文生图**
@@ -78,7 +75,7 @@ astrbot_plugin_seedream_image:
 4. **头像参考**
    - 在提示词中 @用户，系统会自动使用其头像作为参考图：
      ```
-     豆包 @小王 换古装，细节丰富
+     豆包 换古装，细节丰富 @小王
      ```
 
 ## 常见问题
