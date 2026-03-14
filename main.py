@@ -10,7 +10,7 @@ from typing import Optional, List, Tuple
 
 # 核心导入
 from astrbot.api import logger
-from astrbot.api.star import register, Star, Context, StarTools
+from astrbot.api.star import Star, Context, StarTools
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.message_components import Plain, Image, Reply, At
 
@@ -21,7 +21,6 @@ CLEANUP_INTERVAL = 3600  # 1小时
 # aiohttp Session 复用超时
 SESSION_TIMEOUT = aiohttp.ClientTimeout(total=120)
 
-@register("astrbot_plugin_seedream_image", "寰宇中的星尘", "火山方舟Seedream图片生成（文生图/图生图）", "3.3.1", "https://github.com/MarcoHuanxing/astrbot_plugin_seedream_image")
 class SeedreamImagePlugin(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -52,7 +51,7 @@ class SeedreamImagePlugin(Star):
         self.last_operations = {}
         
         # 5. 文件清理配置（优化性能）
-        self.retention_hours = float(config.get("auto_clean_delay", 1.0) / 3600) if config.get("auto_clean_delay") else 1.0
+        self.retention_hours = float(config.get("auto_clean_delay", 1.0))
         self.last_cleanup_time = 0
         # 异步清理任务锁，避免并发清理
         self.cleanup_lock = asyncio.Lock()
@@ -90,11 +89,11 @@ class SeedreamImagePlugin(Star):
                 if file_path.is_file():
                     try:
                         os.remove(file_path)
-                    except:
+                    except Exception:
                         pass
             try:
                 os.rmdir(save_dir)
-            except:
+            except Exception:
                 pass
         
         # 关闭复用的Session
@@ -408,7 +407,7 @@ class SeedreamImagePlugin(Star):
         self.processing_users.add(user_id)
         try:
             # 精简的状态提示
-            yield event.plain_result("开始生成图片..." if image_urls else "开始生成图片...")
+            yield event.plain_result("开始生成图片...")
             
             # 调用API
             generated_url = await self._call_seedream_api(real_prompt, image_urls)
