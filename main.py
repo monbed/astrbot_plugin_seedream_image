@@ -355,16 +355,16 @@ class SeedreamImagePlugin(Star):
     # =========================================================
     # 指令处理（精简输出）
     # =========================================================
-    @filter.command("豆包")
+    @filter.command("豆包画图")
     async def generate_image(self, event: AstrMessageEvent, prompt: str = ""):
         """
         火山方舟Seedream图片生成（支持文生图、图生图、引用生图）
         
         使用方法：
-        1. 文生图：豆包 <提示词>
-        2. 图生图：豆包 <提示词> + 发送图片
-        3. 引用生图：回复他人消息 + 豆包 <提示词>（优先使用引用中的图片）
-        4. 头像参考：豆包 <提示词> + @某人（当无图片时使用 @用户 的头像作参考）
+        1. 文生图：豆包画图 <提示词>
+        2. 图生图：豆包画图 <提示词> + 发送图片
+        3. 引用生图：回复他人消息 + 豆包画图 <提示词>（优先使用引用中的图片）
+        4. 头像参考：豆包画图 <提示词> + @某人（当无图片时使用 @用户 的头像作参考）
         """
         # 提取完整提示词
         full_text = ""
@@ -377,7 +377,7 @@ class SeedreamImagePlugin(Star):
             full_text = prompt
         
         # 移除指令关键词
-        real_prompt = re.sub(r'^.*?豆包', '', full_text).strip()
+        real_prompt = re.sub(r'^.*?豆包画图', '', full_text).strip()
         
         # 提取图片URL列表
         image_urls = self._extract_image_url_list(event)
