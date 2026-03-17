@@ -535,11 +535,6 @@ class SeedreamImagePlugin(Star):
             local_video_path = await self._download_video(video_url)
             final_res.chain.append(Video.fromFileSystem(local_video_path))
             
-            if self.show_prompt_in_reply:
-                final_res.chain.append(Plain(text=f"\n✅ 视频生成完毕！\n提示词：{real_prompt or '纯图生视频'}"))
-            else:
-                final_res.chain.append(Plain(text="\n✅ 视频生成完毕！"))
-            
             await event.send(final_res)
         
         except Exception as e:
