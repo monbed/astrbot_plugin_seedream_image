@@ -350,7 +350,7 @@ class SeedreamImagePlugin(Star):
     # 指令处理（精简输出）
     # =========================================================
     @filter.command("豆包画图")
-    async def generate_image(self, event: AstrMessageEvent, prompt: str = ""):
+    async def generate_image(self, event: AstrMessageEvent):
         """
         火山方舟Seedream图片生成（支持文生图、图生图、引用生图）
         
@@ -360,7 +360,7 @@ class SeedreamImagePlugin(Star):
         3. 引用生图：回复他人消息 + 豆包画图 <提示词>（优先使用引用中的图片）
         4. 头像参考：豆包画图 <提示词> + @某人（当无图片时使用 @用户 的头像作参考）
         """
-        real_prompt = self._extract_prompt(event, "豆包画图", prompt)
+        real_prompt = self._extract_prompt(event, "豆包画图", "")
         
         # 提取图片URL列表
         image_urls = self._extract_image_url_list(event)
@@ -426,7 +426,7 @@ class SeedreamImagePlugin(Star):
     # 视频生成指令
     # =========================================================
     @filter.command("豆包视频")
-    async def generate_video(self, event: AstrMessageEvent, prompt: str = ""):
+    async def generate_video(self, event: AstrMessageEvent):
         """
         火山方舟Seedance视频生成（支持文生视频、图生视频、引用生视频）
         
@@ -446,7 +446,7 @@ class SeedreamImagePlugin(Star):
             yield event.plain_result("VOLC_API_KEY 未配置")
             return
         
-        real_prompt = self._extract_prompt(event, "豆包视频", prompt)
+        real_prompt = self._extract_prompt(event, "豆包视频", "")
         
         # 复用图片提取方法
         image_urls = self._extract_image_url_list(event)
