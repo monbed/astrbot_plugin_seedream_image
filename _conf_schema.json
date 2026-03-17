@@ -26,10 +26,48 @@
     ]
   },
   "model_version": {
-    "description": "Seedream模型版本",
+    "description": "Seedream图片模型版本",
     "type": "string",
-    "hint": "使用的Seedream模型版本",
+    "hint": "图片生成使用的Seedream模型ID，例如 doubao-seedream-5.0-lite-260128",
     "default": ""
+  },
+  "video_model_version": {
+    "description": "Seedance视频模型版本",
+    "type": "string",
+    "hint": "视频生成使用的Seedance模型ID，例如 doubao-seedance-1-5-pro-251215，留空则禁用视频功能",
+    "default": ""
+  },
+  "video_resolution": {
+    "description": "生成视频的分辨率",
+    "type": "string",
+    "hint": "Seedance 1.5/1.0支持720p和480p（1.0 pro支持1080p，参考图场景不支持1080p）",
+    "default": "720p",
+    "options": [
+      "480p",
+      "720p",
+      "1080p"
+    ]
+  },
+  "video_ratio": {
+    "description": "生成视频的宽高比",
+    "type": "string",
+    "hint": "文生视频默认 adaptive，首图生视频默认识别首图比例。自定义可选项受不同模型限制。",
+    "default": "adaptive",
+    "options": [
+      "16:9",
+      "4:3",
+      "1:1",
+      "3:4",
+      "9:16",
+      "21:9",
+      "adaptive"
+    ]
+  },
+  "video_duration": {
+    "description": "视频生成时长(秒)",
+    "type": "string",
+    "hint": "填 2~12 的整数。若填 -1，则由模型在[4,12]秒内自主决定。",
+    "default": "5"
   },
   "show_prompt_in_reply": {
     "description": "发送图片时是否显示提示词",

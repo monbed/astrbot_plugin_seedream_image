@@ -3,21 +3,18 @@ import time
 import re
 import json
 import uuid
-import aiohttp
 import asyncio
-from urllib.parse import urlparse, quote, unquote
+import aiohttp
 from typing import Optional, List, Tuple
 
 # 核心导入
 from astrbot.api import logger
 from astrbot.api.star import Star, Context, StarTools
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.message_components import Plain, Image, Reply, At
+from astrbot.api.message_components import Plain, Image, Video, Reply, At
 
 # 插件常量定义
-PLUGIN_NAME = "astrbot_plugin_seedream_image"
-# 清理逻辑执行间隔（秒）
-CLEANUP_INTERVAL = 3600  # 1小时
+PLUGIN_NAME = "astrbot_plugin_seedream_media"
 # aiohttp Session 复用超时
 SESSION_TIMEOUT = aiohttp.ClientTimeout(total=120)
 
@@ -31,11 +28,22 @@ class SeedreamImagePlugin(Star):
         self.api_endpoint = config.get("VOLC_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3").strip()
         self.image_size = config.get("image_size", "2K").strip()
         self.model_version = config.get("model_version", "seedream-v1").strip()
-        # 新增：是否显示提示词配置
-        self.show_prompt_in_reply = config.get("show_prompt_in_reply", True)
-        # 可选配置：仅在特殊场景下允许禁用SSL验证（默认关闭）
-        self.allow_insecure_ssl = config.get("allow_insecure_ssl", False)
+        # 视频模型配置
+        self.video_model_version = config.get("video_model_version", "").strip()
+        self.video_resolution = config.get("video_resolution", "720p").strip()
+        self.video_ratio = config.get("video_ratio", "adaptive").strip()
         
+        # 视频时长处理（如果填错则回退到 5 秒）
+        try:
+            v_duration = int(config.get("video_duration", 5))
+            if v_duration != -1 and not (2 <= v_duration <= 12):
+                v_duration = 5
+        except (ValueError, TypeError):
+            v_duration = 5
+        self.video_duration = v_duration
+
+        # 是否显示提示词配置
+        self.show_prompt_in_reply = config.get("show_prompt_in_reply", True)
         # 2. 校验并处理图片分辨率
         self.valid_size, self.size_error = self._validate_image_size(self.image_size)
         if self.size_error:
@@ -44,17 +52,14 @@ class SeedreamImagePlugin(Star):
         
         # 3. 拼接完整API地址
         self.full_api_url = f"{self.api_endpoint.rstrip('/')}/images/generations"
+        self.video_tasks_url = f"{self.api_endpoint.rstrip('/')}/contents/generations/tasks"
         
         # 4. 限流/防重配置
         self.rate_limit_seconds = 10.0
         self.processing_users = set()
         self.last_operations = {}
         
-        # 5. 文件清理配置（优化性能）
-        self.retention_hours = float(config.get("auto_clean_delay", 1.0))
-        self.last_cleanup_time = 0
-        # 异步清理任务锁，避免并发清理
-        self.cleanup_lock = asyncio.Lock()
+
         
         # 6. aiohttp Session 复用（优化连接开销）
         self._session: Optional[aiohttp.ClientSession] = None
@@ -62,14 +67,14 @@ class SeedreamImagePlugin(Star):
         # 7. 核心配置校验
         if not self.api_key:
             logger.error(f"[{PLUGIN_NAME}] VOLC_API_KEY未配置！请填写火山方舟账号的API KEY")
-        logger.info(f"[{PLUGIN_NAME}] 初始化完成 | 模型版本：{self.model_version} | 生成尺寸：{self.valid_size} | API端点：{self.full_api_url} | 显示提示词：{self.show_prompt_in_reply}")
+        logger.info(f"[{PLUGIN_NAME}] 初始化完成 | 图片模型：{self.model_version} | 视频模型：{self.video_model_version or '未配置'} | 生成尺寸：{self.valid_size} | 显示提示词：{self.show_prompt_in_reply}")
 
     @property
     def session(self) -> aiohttp.ClientSession:
         """复用aiohttp ClientSession，减少TCP连接开销"""
         if self._session is None or self._session.closed:
             connector = aiohttp.TCPConnector(
-                ssl=not self.allow_insecure_ssl,  # 修复SSL验证问题：默认启用，仅配置允许时禁用
+                ssl=True,
                 limit=10,  # 限制并发连接数
                 limit_per_host=5
             )
@@ -124,72 +129,16 @@ class SeedreamImagePlugin(Star):
         return "2K", f"分辨率格式错误（{size_str}），支持的分辨率：{', '.join(valid_resolutions)}"
 
     # =========================================================
-    # 通用工具方法（优化性能）
+    # 通用工具方法
     # =========================================================
-    async def _cleanup_temp_files(self):
-        """
-        异步清理过期图片文件（优化：
-        1. 仅间隔1小时执行一次
-        2. 异步执行不阻塞主流程
-        3. 加锁避免并发清理
-        """
-        if self.retention_hours <= 0:
-            return
-            
-        async with self.cleanup_lock:
-            now = time.time()
-            # 检查是否达到清理间隔
-            if now - self.last_cleanup_time < CLEANUP_INTERVAL:
-                return
-
-            save_dir = StarTools.get_data_dir(PLUGIN_NAME) / "images"
-            if not save_dir.exists():
-                self.last_cleanup_time = now
-                return
-
-            retention_seconds = self.retention_hours * 3600
-            deleted_count = 0
-
-            try:
-                # 使用异步遍历（减少阻塞）
-                for filename in os.listdir(save_dir):
-                    file_path = save_dir / filename
-                    if file_path.is_file() and now - file_path.stat().st_mtime > retention_seconds:
-                        try:
-                            os.remove(file_path)
-                            deleted_count += 1
-                        except Exception as del_err:
-                            logger.warning(f"[{PLUGIN_NAME}] 删除过期文件失败 {filename}: {del_err}")
-                
-                if deleted_count > 0:
-                    logger.info(f"[{PLUGIN_NAME}] 清理完成，共删除 {deleted_count} 张过期图片")
-                
-                self.last_cleanup_time = now
-                
-            except Exception as e:
-                logger.warning(f"[{PLUGIN_NAME}] 自动清理流程异常: {e}")
-
     async def _download_generated_image(self, url: str) -> str:
-        """下载API生成的图片（优化：复用Session，启用SSL验证）"""
-        # 异步执行清理（不阻塞下载流程）
-        asyncio.create_task(self._cleanup_temp_files())
-        
+        """下载API生成的图片（复用Session）"""
         if not url or not url.startswith("http"):
             raise Exception("无效的图片URL")
         
-        url = unquote(url)
-        url = quote(url, safe=':/?&=')
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": urlparse(self.api_endpoint).netloc or "https://ark.cn-beijing.volces.com/"
-        }
-        
         try:
-            # 复用全局Session（优化连接开销）
             async with self.session.get(
-                url, 
-                headers=headers,
+                url,
                 allow_redirects=True
             ) as resp:
                 if resp.status != 200:
@@ -278,9 +227,38 @@ class SeedreamImagePlugin(Star):
         
         return images
 
+    def _extract_prompt(self, event: AstrMessageEvent, command: str, fallback: str = "") -> str:
+        """从消息中提取提示词并移除指令关键词"""
+        full_text = ""
+        if hasattr(event, 'message_obj') and event.message_obj and event.message_obj.message:
+            for component in event.message_obj.message:
+                if isinstance(component, Plain):
+                    full_text += component.text
+        if not full_text:
+            full_text = fallback
+        return re.sub(rf'^.*?{re.escape(command)}', '', full_text).strip()
+
     # =========================================================
-    # 核心API调用逻辑（优化异常处理粒度）
+    # 核心API调用逻辑
     # =========================================================
+    def _find_video_url(self, data) -> str:
+        """递归查找返回数据中的视频 URL"""
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, str) and v.startswith("http") and (".mp4" in v or "video" in v):
+                    return v
+                elif isinstance(v, (dict, list)):
+                    res = self._find_video_url(v)
+                    if res:
+                        return res
+        elif isinstance(data, list):
+            for item in data:
+                res = self._find_video_url(item)
+                if res:
+                    return res
+        return ""
+
+
     async def _call_seedream_api(self, prompt: str, image_urls: List[str] = None):
         """调用火山方舟Seedream API（优化：复用Session，精简异常处理）"""
         if not self.api_key:
@@ -301,8 +279,7 @@ class SeedreamImagePlugin(Star):
         # 请求头
         headers = {
             'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'Content-Type': 'application/json'
         }
         
         try:
@@ -366,18 +343,7 @@ class SeedreamImagePlugin(Star):
         3. 引用生图：回复他人消息 + 豆包画图 <提示词>（优先使用引用中的图片）
         4. 头像参考：豆包画图 <提示词> + @某人（当无图片时使用 @用户 的头像作参考）
         """
-        # 提取完整提示词
-        full_text = ""
-        if hasattr(event, 'message_obj') and event.message_obj and event.message_obj.message:
-            for component in event.message_obj.message:
-                if isinstance(component, Plain):
-                    full_text += component.text
-        
-        if not full_text:
-            full_text = prompt
-        
-        # 移除指令关键词
-        real_prompt = re.sub(r'^.*?豆包画图', '', full_text).strip()
+        real_prompt = self._extract_prompt(event, "豆包画图", prompt)
         
         # 提取图片URL列表
         image_urls = self._extract_image_url_list(event)
@@ -438,3 +404,131 @@ class SeedreamImagePlugin(Star):
         finally:
             if user_id in self.processing_users:
                 self.processing_users.remove(user_id)
+
+    # =========================================================
+    # 视频生成指令
+    # =========================================================
+    @filter.command("豆包视频")
+    async def generate_video(self, event: AstrMessageEvent, prompt: str = ""):
+        """
+        火山方舟Seedance视频生成（支持文生视频、图生视频、引用生视频）
+        
+        使用方法：
+        1. 文生视频：豆包视频 <提示词>
+        2. 图生视频：豆包视频 <提示词> + 发送图片
+        3. 引用生视频：回复他人消息 + 豆包视频 <提示词>
+        """
+        user_id = event.get_sender_id()
+        
+        # 校验视频模型是否配置
+        if not self.video_model_version:
+            yield event.plain_result("视频模型未配置，请在插件配置中填写 video_model_version")
+            return
+        
+        if not self.api_key:
+            yield event.plain_result("VOLC_API_KEY 未配置")
+            return
+        
+        real_prompt = self._extract_prompt(event, "豆包视频", prompt)
+        
+        # 复用图片提取方法
+        image_urls = self._extract_image_url_list(event)
+        
+        if not real_prompt and not image_urls:
+            yield event.plain_result("请提供提示词或图片")
+            return
+        
+        # 防抖检查
+        current_time = time.time()
+        if user_id in self.last_operations:
+            if current_time - self.last_operations[user_id] < self.rate_limit_seconds:
+                yield event.plain_result("操作过快，请稍后再试")
+                return
+        self.last_operations[user_id] = current_time
+        
+        # 防重复处理
+        if user_id in self.processing_users:
+            yield event.plain_result("有正在进行的任务，请稍候")
+            return
+        
+        self.processing_users.add(user_id)
+        yield event.plain_result("🎬 视频任务已提交！\n⏳ 预计需要 3~5 分钟，完成后会自动发送，请耐心等待。")
+        
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            # 构建 content 列表
+            content_list = []
+            if real_prompt:
+                content_list.append({"type": "text", "text": real_prompt})
+            if image_urls:
+                content_list.append({"type": "image_url", "image_url": {"url": image_urls[0]}})
+            
+            payload = {
+                "model": self.video_model_version,
+                "content": content_list,
+                "generate_audio": True,
+                "resolution": self.video_resolution,
+                "ratio": self.video_ratio,
+                "duration": self.video_duration,
+                "watermark": False
+            }
+            
+            # 提交视频生成任务
+            async with self.session.post(self.video_tasks_url, headers=headers, json=payload) as resp:
+                res_data = await resp.json()
+                if resp.status != 200:
+                    raise Exception(res_data.get("error", {}).get("message", f"HTTP {resp.status}"))
+                
+                task_id = res_data.get("id") or res_data.get("task_id")
+                if not task_id:
+                    raise Exception(f"未获取到 Task ID: {res_data}")
+            
+            logger.info(f"[{PLUGIN_NAME}] 视频任务已提交，Task ID: {task_id}")
+            
+            # 轮询检查任务状态
+            video_url = ""
+            max_retries = 60  # 最多轮询 60 次 (60 * 10s = 10 分钟)
+            
+            for _ in range(max_retries):
+                await asyncio.sleep(10)
+                
+                poll_url = f"{self.video_tasks_url}/{task_id}"
+                async with self.session.get(poll_url, headers=headers) as poll_resp:
+                    poll_data = await poll_resp.json()
+                    status = poll_data.get("status", "").lower()
+                    
+                    if status in ["succeeded", "success", "completed"]:
+                        video_url = self._find_video_url(poll_data)
+                        break
+                    elif status in ["failed", "error", "cancelled"]:
+                        error_msg = poll_data.get("error", {}).get("message", "任务失败")
+                        raise Exception(f"生成失败: {error_msg}")
+            
+            if not video_url:
+                raise Exception("任务超时或未找到视频 URL")
+            
+            # 发送视频结果
+            final_res = event.make_result()
+            if hasattr(event.message_obj, 'message_id'):
+                final_res.chain.append(Reply(id=event.message_obj.message_id))
+            
+            final_res.chain.append(Video.fromURL(video_url))
+            
+            if self.show_prompt_in_reply:
+                final_res.chain.append(Plain(text=f"\n✅ 视频生成完毕！\n提示词：{real_prompt or '纯图生视频'}"))
+            else:
+                final_res.chain.append(Plain(text="\n✅ 视频生成完毕！"))
+            
+            await event.send(final_res)
+        
+        except Exception as e:
+            logger.error(f"[{PLUGIN_NAME}] 视频生成失败（用户{user_id}）: {str(e)}")
+            error_res = event.make_result().message(f"视频生成失败：{str(e)}")
+            await event.send(error_res)
+        
+        finally:
+            self.processing_users.discard(user_id)
