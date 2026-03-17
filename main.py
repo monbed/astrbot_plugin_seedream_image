@@ -133,6 +133,7 @@ class SeedreamImagePlugin(Star):
     # =========================================================
     async def _download_generated_image(self, url: str) -> str:
         """下载API生成的图片（复用Session）"""
+        logger.info(f"[{PLUGIN_NAME}] 正在下载图片: {url}")
         if not url or not url.startswith("http"):
             raise Exception("无效的图片URL")
         
@@ -237,6 +238,22 @@ class SeedreamImagePlugin(Star):
         if not full_text:
             full_text = fallback
         return re.sub(rf'^.*?{re.escape(command)}', '', full_text).strip()
+
+    async def _download_video(self, url: str) -> str:
+        """下载视频到本地临时文件"""
+        logger.info(f"[{PLUGIN_NAME}] 正在下载视频: {url}")
+        temp_dir = os.path.join(os.path.dirname(__file__), "temp_videos")
+        os.makedirs(temp_dir, exist_ok=True)
+        filename = f"video_{str(uuid.uuid4().hex)[:8]}.mp4"
+        local_path = os.path.join(temp_dir, filename)
+        
+        async with self.session.get(url) as resp:
+            if resp.status != 200:
+                raise Exception(f"视频下载失败 HTTP {resp.status}")
+            content = await resp.read()
+            with open(local_path, "wb") as f:
+                f.write(content)
+        return local_path
 
     # =========================================================
     # 核心API调用逻辑
@@ -513,10 +530,10 @@ class SeedreamImagePlugin(Star):
             
             # 发送视频结果
             final_res = event.make_result()
-            if hasattr(event.message_obj, 'message_id'):
-                final_res.chain.append(Reply(id=event.message_obj.message_id))
             
-            final_res.chain.append(Video.fromURL(video_url))
+            # 下载到本地并发送
+            local_video_path = await self._download_video(video_url)
+            final_res.chain.append(Video.fromFileSystem(local_video_path))
             
             if self.show_prompt_in_reply:
                 final_res.chain.append(Plain(text=f"\n✅ 视频生成完毕！\n提示词：{real_prompt or '纯图生视频'}"))
@@ -532,3 +549,9 @@ class SeedreamImagePlugin(Star):
         
         finally:
             self.processing_users.discard(user_id)
+            # 清理本地刚下好的临时视频
+            if 'local_video_path' in locals() and os.path.exists(local_video_path):
+                try:
+                    os.remove(local_video_path)
+                except Exception as e:
+                    logger.error(f"[{PLUGIN_NAME}] 临时视频清理失败 {local_video_path}: {e}")
