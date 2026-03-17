@@ -36,7 +36,7 @@
 | `image_size` | ❌ | 图片分辨率（`1K` / `2K` / `3K` / `4K`） | `2K` |
 | `video_resolution` | ❌ | 生成视频的分辨率（`480p` / `720p` / `1080p`），1.0 lite 只持 720p，图生视频不支持 1080p | `720p` |
 | `video_ratio` | ❌ | 生成视频的宽高比（`16:9`、`4:3`、`1:1` 等 7 种比例）。`adaptive` 会自动根据画面或提示词选择。 | `adaptive` |
-| `video_duration` | ❌ | 生成视频的时长。填 2~12 的整数表示指定秒数。填 `-1` 表示由模型基于 4~12 内自动选择。 | `5` |
+| `video_duration` | ❌ | 生成视频的时长。填 2\~12 的整数表示指定秒数。填 `-1` 表示由模型基于 4\~12 内自动选择。 | `5` |
 | `VOLC_ENDPOINT` | ❌ | API 端点地址 | `https://ark.cn-beijing.volces.com/api/v3` |
 | `show_prompt_in_reply` | ❌ | 回复中是否显示提示词 | `true` |
 
