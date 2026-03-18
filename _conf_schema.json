@@ -67,7 +67,7 @@
     "description": "视频生成时长(秒)",
     "type": "string",
     "hint": "填 2~12 的整数。若填 -1，则由模型在[4,12]秒内自主决定。",
-    "default": "5"
+    "default": "-1"
   },
   "show_prompt_in_reply": {
     "description": "发送图片时是否显示提示词",
@@ -86,6 +86,6 @@
     "description": "网络请求超时时间(秒)",
     "type": "int",
     "hint": "生成媒体及下载的全局超时时间，默认 120 秒",
-    "default": 120
+    "default": "120"
   }
 }
