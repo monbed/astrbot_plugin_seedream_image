@@ -97,7 +97,7 @@ class SeedreamImagePlugin(Star):
         # 7. 核心配置前置校验
         if not self.api_key:
             logger.error(f"[{PLUGIN_NAME}] 异常拦截 ｜ 未配置 VOLC_API_KEY，请优先填写火山方舟 API 密钥")
-        logger.info(f"[{PLUGIN_NAME}] 初始化完成 ｜ 图片模型：{self.model_version} ｜ 视频模型：{self.video_model_version or '未配置'} ｜ 尺寸：{self.image_size} ｜ 显示提示词：{self.show_prompt_in_reply}")
+        logger.info(f"[{PLUGIN_NAME}] 初始化完成 ｜ 图片模型：{self.model_version or '未配置'} ｜ 视频模型：{self.video_model_version or '未配置'} ｜ 显示提示词：{self.show_prompt_in_reply}")
 
     @property
     def api_headers(self) -> dict:
