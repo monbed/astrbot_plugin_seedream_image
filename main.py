@@ -493,8 +493,7 @@ class SeedreamImagePlugin(Star):
             if real_prompt:
                 content_list.append({"type": "text", "text": real_prompt})
             if image_urls:
-                for img_url in image_urls:
-                    content_list.append({"type": "image_url", "image_url": {"url": img_url}})
+                content_list.append({"type": "image_url", "image_url": {"url": image_urls[0]}})
             
             payload = {
                 "model": self.video_model_version,
