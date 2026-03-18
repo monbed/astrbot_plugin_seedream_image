@@ -72,7 +72,7 @@ class SeedreamImagePlugin(Star):
         self.video_ratio = str(config.get("video_ratio", "")).strip()
         
         # 2. 解析功能和定时参数配置
-        self.video_duration = str(config.get("video_duration", "")).strip()
+        self.video_duration = config.get("video_duration", "")
         self.show_prompt_in_reply = config.get("show_prompt_in_reply", "")
         self.download_timeout = config.get("download_timeout", "")
         self.clean_cron = config.get("clean_cron", "")
@@ -327,13 +327,19 @@ class SeedreamImagePlugin(Star):
         if image_url:
             content_list.append({"type": "image_url", "image_url": {"url": image_url}})
             
+        # 确保 duration 为整数类型（火山方舟API要求数字而非字符串）
+        try:
+            duration_val = int(self.video_duration)
+        except (ValueError, TypeError):
+            duration_val = -1
+            
         payload = {
             "model": self.video_model_version,
             "content": content_list,
             "generate_audio": True,
             "resolution": self.video_resolution,
             "ratio": self.video_ratio,
-            "duration": self.video_duration,
+            "duration": duration_val,
             "watermark": False
         }
         
