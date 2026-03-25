@@ -1,5 +1,6 @@
 import time
 import re
+import os
 import json
 import uuid
 import asyncio
@@ -28,10 +29,12 @@ class CacheCleaner:
         self.cache_dir = cache_dir
         self.cron_expr = cron_expr
         self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
-        self._register_and_start()
+        self._started = False
 
-    def _register_and_start(self):
-        """先注册定时任务，成功后再启动 scheduler，避免空转"""
+    async def start(self):
+        """异步启动：先注册定时任务，成功后再启动 scheduler，避免空转"""
+        if self._started:
+            return
         try:
             self.trigger = CronTrigger.from_crontab(self.cron_expr)
             self.scheduler.add_job(
@@ -41,20 +44,29 @@ class CacheCleaner:
                 max_instances=1,
             )
             self.scheduler.start()
+            self._started = True
             logger.info(f"[{PLUGIN_NAME}] 缓存清理定时任务已启动，cron: {self.cron_expr}")
         except Exception as e:
             logger.error(f"[{PLUGIN_NAME}] 缓存清理 Cron 格式错误，scheduler 未启动：{e}")
 
     async def _clean_plugin_cache(self) -> None:
-        """删除并重建缓存目录"""
+        """清空缓存目录内容（保留目录本身，避免与并发下载产生竞态）"""
         loop = asyncio.get_running_loop()
         try:
             if self.cache_dir.exists():
-                await loop.run_in_executor(None, shutil.rmtree, self.cache_dir)
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"[{PLUGIN_NAME}] 缓存目录已定时清理并重建。")
+                await loop.run_in_executor(None, self._remove_dir_contents, self.cache_dir)
+            logger.info(f"[{PLUGIN_NAME}] 缓存目录已定时清理。")
         except Exception:
             logger.exception(f"[{PLUGIN_NAME}] 定时清理缓存目录时出错。")
+
+    @staticmethod
+    def _remove_dir_contents(dir_path) -> None:
+        """删除目录下所有内容但保留目录本身，避免 rmtree 后重建之间的竞态窗口"""
+        for entry in os.scandir(dir_path):
+            if entry.is_file() or entry.is_symlink():
+                os.remove(entry.path)
+            elif entry.is_dir():
+                shutil.rmtree(entry.path)
 
     async def stop(self):
         self.scheduler.remove_all_jobs()
@@ -65,7 +77,7 @@ class CacheCleaner:
 class SeedreamImagePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-        self.config = config or {}
+        self.config = config
         
         # 1. 解析基础字符串配置
         self.api_key = str(config.get("VOLC_API_KEY", "")).strip()
@@ -77,10 +89,10 @@ class SeedreamImagePlugin(Star):
         self.video_ratio = str(config.get("video_ratio", "")).strip()
         
         # 2. 解析功能和定时参数配置
-        self.video_duration = config.get("video_duration", 5)
+        self.video_duration = config.get("video_duration", -1)
         self.video_multi_image = config.get("video_multi_image", False)
         self.show_prompt_in_reply = config.get("show_prompt_in_reply", False)
-        self.download_timeout = config.get("download_timeout", 60)
+        self.download_timeout = config.get("download_timeout", 120)
         self.clean_cron = config.get("clean_cron", "0 4 * * *")
         
         # 3. 拼接完整API地址
@@ -96,6 +108,8 @@ class SeedreamImagePlugin(Star):
         self.temp_dir = StarTools.get_data_dir(PLUGIN_NAME) / "cache"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.cleaner = CacheCleaner(self.temp_dir, self.clean_cron)
+        # 延迟到事件循环就绪后启动 scheduler，避免在同步构造函数中隐式创建事件循环
+        asyncio.get_event_loop().create_task(self.cleaner.start())
         
         # 6. aiohttp Session 复用（优化连接开销）
         self._session: Optional[aiohttp.ClientSession] = None
@@ -141,7 +155,7 @@ class SeedreamImagePlugin(Star):
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, shutil.rmtree, self.temp_dir)
             except Exception:
-                logger.warning(f"[{PLUGIN_NAME}] 卸载时清理缓存目录失败（已忽略）")
+                logger.exception(f"[{PLUGIN_NAME}] 卸载时清理缓存目录失败（已忽略）")
         
         # 关闭复用的Session
         if hasattr(self, '_session') and self._session and not self._session.closed:
@@ -228,7 +242,7 @@ class SeedreamImagePlugin(Star):
             return ""
         if isinstance(data, dict):
             for k, v in data.items():
-                if isinstance(v, str) and v.startswith("http") and (v.split("?")[0].endswith(".mp4") or "/video/" in v):
+                if isinstance(v, str) and v.startswith(("http://", "https://")) and (v.split("?")[0].endswith(".mp4") or "/video/" in v):
                     return v
                 elif isinstance(v, (dict, list)):
                     res = self._find_video_url(v, _depth + 1)
@@ -252,7 +266,7 @@ class SeedreamImagePlugin(Star):
     async def _download_media(self, url: str, media_type: str = "图片", timeout: Optional[int] = None) -> str:
         """内部工具：统一的媒体文件（图片/视频）高速下载核心"""
         logger.info(f"[{PLUGIN_NAME}] 开始下载{media_type} ｜ URL: {url}")
-        if not url or not url.startswith("http"):
+        if not url or not url.startswith(("http://", "https://")):
             raise SeedreamPluginError(f"无效的{media_type}URL")
         
         # 校验 timeout 参数合法性
@@ -282,7 +296,8 @@ class SeedreamImagePlugin(Star):
     
     @staticmethod
     def _write_file_sync(path: str, data: bytes) -> None:
-        """同步写文件，供 run_in_executor 调用"""
+        """同步写文件，供 run_in_executor 调用（写入前确保目录存在，防止缓存清理竞态）"""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
             f.write(data)
 
@@ -367,14 +382,10 @@ class SeedreamImagePlugin(Star):
             else:
                 content_list.append({"type": "image_url", "image_url": {"url": image_urls[0]}})
             
-        # 确保 duration 为整数类型（火山方舟API要求数字而非字符串）
-        try:
-            duration_val = int(self.video_duration)
-            if duration_val <= 0:
-                raise ValueError("duration must be positive")
-        except (ValueError, TypeError):
-            logger.warning(f"[{PLUGIN_NAME}] video_duration 值无效 ({self.video_duration})，回退使用默认值 5")
-            duration_val = 5
+        # duration 合法性校验（schema 已保证 int 类型，此处仅校验值域）
+        duration_val = self.video_duration
+        if duration_val <= 0:
+            duration_val = -1  # 由模型自主决定时长
             
         payload = {
             "model": self.video_model_version,
@@ -406,7 +417,11 @@ class SeedreamImagePlugin(Star):
                 
         logger.info(f"[{PLUGIN_NAME}] 视频任务提交成功 ｜ Task ID: {task_id}")
         
-        # 2. 轮询检查任务状态
+        # 2. 轮询等待任务完成
+        return await self._poll_video_task(task_id)
+
+    async def _poll_video_task(self, task_id: str) -> str:
+        """轮询视频任务状态直到完成、失败或超时"""
         max_retries = 60  # 最多轮询 60 次 (60 * 10s = 10 分钟)
         max_consecutive_failures = 5  # 连续网络失败上限，超过则提前终止
         consecutive_failures = 0

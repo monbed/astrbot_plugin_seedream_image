@@ -65,9 +65,9 @@
   },
   "video_duration": {
     "description": "视频生成时长(秒)",
-    "type": "string",
+    "type": "int",
     "hint": "填 2~12 的整数。若填 -1，则由模型在[4,12]秒内自主决定。",
-    "default": "-1"
+    "default": -1
   },
   "video_multi_image": {
     "description": "视频多图传入支持",
@@ -87,6 +87,12 @@
     "type": "string",
     "hint": "每天清空缓存图片的定时任务（默认每天凌晨4点）",
     "default": "0 4 * * *"
+  },
+  "rate_limit_seconds": {
+    "description": "用户操作冷却时间(秒)",
+    "type": "float",
+    "hint": "同一用户两次操作之间的最小间隔，防止频繁调用，默认 10 秒",
+    "default": "10"
   },
   "download_timeout": {
     "description": "网络请求超时时间(秒)",
