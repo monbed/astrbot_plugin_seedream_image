@@ -190,13 +190,29 @@ class SeedreamImagePlugin(Star):
         return None
 
     def _extract_prompt(self, event: AstrMessageEvent, command: str) -> str:
-        """从消息中提取纯净的提示词"""
-        full_text = ""
-        if hasattr(event, 'message_obj') and event.message_obj and event.message_obj.message:
+        """参考 bananic_ninjutsu 修改：从消息中提取纯净的提示词，过滤 @ 和平台特有组件标记"""
+        # 优先使用 AstrBot 内置的 message_str 提取完整纯文本
+        raw_text = getattr(event, 'message_str', '').strip()
+        
+        # 剥离可能存在的命令前缀、指令名本身及语法残留（冒号、逗号等）
+        pattern = rf'^.*?{re.escape(command)}[:：,，]?\s*'
+        content = re.sub(pattern, '', raw_text, flags=re.DOTALL).strip()
+        
+        # 备用方案：若适配器未正确处理 message_str，则遍历 Plain 组件
+        if not content and hasattr(event, 'message_obj') and event.message_obj and getattr(event.message_obj, 'message', None):
+            full_text = ""
             for component in event.message_obj.message:
                 if isinstance(component, Plain):
                     full_text += component.text
-        return re.sub(rf'^.*?{re.escape(command)}', '', full_text, flags=re.DOTALL).strip()
+            content = re.sub(pattern, '', full_text, flags=re.DOTALL).strip()
+            
+        # 参考 ninjutsu 剔除 @ 用户名称和 CQ码（[CQ:at...] 等）
+        text_parts = []
+        for token in content.split():
+            if not token.startswith("@") and not token.startswith("[CQ:at"):
+                text_parts.append(token)
+                
+        return " ".join(text_parts).strip()
 
     def _extract_image_url_list(self, event: AstrMessageEvent) -> List[str]:
         """
