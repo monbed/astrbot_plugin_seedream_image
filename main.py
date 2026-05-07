@@ -498,9 +498,11 @@ class SeedreamImagePlugin(Star):
         
         for cmd, func in self.commands.items():
             if text.startswith(cmd):
-                event.stop_event()
+                # AstrBot v4.24.1+ 在 yield 后检查 is_stopped()，
+                # 必须在生成器完全消费后再调 stop_event()，否则框架会提前终止迭代。
                 async for res in func(event):
                     yield res
+                event.stop_event()
                 break
 
     # =========================================================
