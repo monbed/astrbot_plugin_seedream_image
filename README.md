@@ -34,16 +34,19 @@
 | `VOLC_API_KEY` | ✅ | 火山方舟 API Key | 空 |
 | `model_version` | ✅ | 图片模型 ID，如 `doubao-seedream-5.0-lite-260128` | 空 |
 | `video_model_version` | ❌ | 视频模型 ID，如 `doubao-seedance-1-5-pro-251215`，留空则禁用视频功能 | 空 |
+| `need_prefix` | ❌ | 是否必须使用斜杠等前缀触发，关闭后直接发送"豆包画图"亦可触发 | `true` |
 | `image_size` | ❌ | 图片分辨率（`1K` / `2K` / `3K` / `4K`） | `2K` |
 | `video_resolution` | ❌ | 生成视频的分辨率（`480p` / `720p` / `1080p`），1.0 lite 只持 720p，图生视频不支持 1080p | `720p` |
 | `video_ratio` | ❌ | 生成视频的宽高比（`16:9`、`4:3`、`1:1` 等 7 种比例）。`adaptive` 会自动根据画面或提示词选择。 | `adaptive` |
-| `video_duration` | ❌ | 生成视频的时长。填 2\~12 的整数表示指定秒数。填 `-1` 表示由模型基于 4\~12 内自动选择。 | `5` |
+| `video_duration` | ❌ | 生成视频的时长。填 2\~12 的整数表示指定秒数。填 `-1` 表示由模型基于 4\~12 内自动选择。 | `-1` |
+| `video_multi_image` | ❌ | 视频多图传入支持，确认视频模型支持多图传入再开启 | `false` |
 | `VOLC_ENDPOINT` | ❌ | API 端点地址 | `https://ark.cn-beijing.volces.com/api/v3` |
 | `show_prompt_in_reply` | ❌ | 回复中是否显示提示词 | `true` |
+| `rate_limit_seconds` | ❌ | 同一用户两次操作之间的最小冷却间隔 (秒) | `10` |
 | `clean_cron` | ❌ | 每天清空媒体缓存文件夹的定时策略 (Cron格式) | `0 4 * * *` |
 | `download_timeout` | ❌ | API调用和媒体下载的全局连接超时时间 (秒) | `120` |
 
-> **提示**：不同模型版本支持的分辨率不同 — Seedream 5.0 lite 支持 2K/3K，Seedream 4.0 支持 1K/2K/4K。
+> **提示**：不同模型版本支持的分辨率不同 — Seedream 5.0 lite 支持 2K/3K，Seedream 4.5 支持 2K/4K，Seedream 4.0 支持 1K/2K/4K。
 
 ## 📖 使用示例
 
@@ -97,6 +100,6 @@
 
 ## 📋 版本信息
 
-- **版本**：4.3.0
+- **版本**：4.3.1
 - **框架**：AstrBot
 - **能力**：文生图 · 图生图 · 文生视频 · 图生视频 · 多图智能提取与关联解析
